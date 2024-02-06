@@ -1,3 +1,5 @@
+from telebot import types
+
 import telebot
 import sqlite3
 
@@ -23,48 +25,67 @@ def send_welcome(message):
                 bot.send_message(message.chat.id, 'Вы уже зарегистрированы')
             else:
                 raise ValueError
-        except:
+        except Exception:
             bot.send_message(message.chat.id, 'Привет, сейчас тебя зарегистрирую!\n'
-                                              'Введите своё имя')
-            bot.register_next_step_handler(message, user_name)
+                                              'Введите свой пароль')
+            bot.register_next_step_handler(message, user_pass)
         user_id = None
         cur.close()
         conn.close()
     except ConnectionError:
-        bot.send_message()
-
-
-def user_name(message):
-    global name
-    name = message.text.strip()
-    bot.send_message(message.chat.id, 'Отлично!\n'
-                                      'Подскажи пожалуйства свою фамилию')
-    bot.register_next_step_handler(message, user_last_name)
-
-
-def user_last_name(message):
-    global last_name
-    last_name = message.text.strip()
-    bot.send_message(message.chat.id, 'Введите пароль')
-    bot.register_next_step_handler(message, user_pass)
+        bot.send_message(message.chat.id, 'Ошибка с соединением. Попробуйте позже')
 
 
 def user_pass(message):
-    chat_id = message.chat.id
-    password = message.text.strip()
-
     conn = sqlite3.connect('db.sql')
     cur = conn.cursor()
-    cur.execute("INSERT INTO users"
-                " (name, last_name, password, chat_id)"
-                " VALUES ('%s', '%s', '%s', '%s')"
-                % (name, last_name, password, chat_id))
+    cur.execute("INSERT INTO users (chat_id, password)"
+                " VALUES ('%s', '%s')"
+                % (message.chat.id, message.text.strip()))
     conn.commit()
     cur.close()
     conn.close()
 
-    bot.send_message(message.chat.id, 'Вы зарегистрированы' + '\n' + f'Ваш ID: {chat_id}' + '\n' + f'Вас зовут: \
-    {last_name} {name}' + '\n' + f'Ваш профиль: ||{password}||', parse_mode='MarkdownV2')
+    bot.send_message(message.chat.id, f'Вы зарегистрированы.\nВаш ID: {message.chat.id}\nВаш пароль: {message.text.strip()}')
+
+
+@bot.message_handler(commands=['setBio'])
+def set_bio(message):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton('Имя', callback_data='first_name'))
+    markup.add(types.InlineKeyboardButton('Фамилия', callback_data='last_name'))
+    bot.send_message(message.chat.id, 'Выберите что хотите поменять или добавить', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == 'first_name':
+        bot.send_message(call.message.chat.id, 'Введите имя')
+        bot.register_next_step_handler(call.message, user_name)
+    elif call.data == 'last_name':
+        bot.send_message(call.message.chat.id, 'Введите фамиилию')
+        bot.register_next_step_handler(call.message, user_last_name)
+
+
+def user_last_name(message):
+    conn = sqlite3.connect('db.sql')
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET last_name = '%s' WHERE chat_id = '%s'" % (message.text, message.chat.id))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    bot.send_message(message.chat.id, 'Ваша фамилия была изменена')
+
+
+def user_name(message):
+    conn = sqlite3.connect('db.sql')
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET name = '%s' WHERE chat_id = '%s'" % (message.text, message.chat.id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(message.chat.id, 'Ваше имя было изменено')
 
 
 bot.infinity_polling()
